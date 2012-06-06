@@ -1,0 +1,36 @@
+<?php
+
+function civicrm_petition_button_install() {
+  drupal_install_schema('civicrm_petition_button');
+}
+
+function civicrm_petition_button_uninstall() {
+  drupal_uninstall_schema('civicrm_petition_button');
+  variable_del('civicrm_petition_button_petitiontype');
+}
+
+function civicrm_petition_button_schema() {
+  $schema['civicrm_petition_button'] = array(
+    'description' => t('Stores recipient and message information for petitions that should send emails'),
+    'fields' => array(
+      'petition_id' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => t('The SID of the petition.'),
+      ),
+      'button_text' => array(
+        'type' => 'varchar',
+        'description' => t('The text of the petition submit button.'),
+        'length' => 128,
+      ),
+    ),
+    'primary key' => array('petition_id'),
+    'indexes' => array(
+      'petition_id' => array('petition_id'),
+    ),
+  );
+  
+  return $schema;
+} 

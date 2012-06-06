@@ -1,0 +1,107 @@
+<?php
+
+function civicrm_petition_button_civicrm_buildForm( $formName, &$form ) {
+  if ($formName != 'CRM_Campaign_Form_Petition') { return; }
+  $survey_id = $form->getVar('_surveyId');
+  if ($survey_id) {
+    $db_prefix = civicrm_petition_button_get_db_prefix();
+    $petitionbuttonval = db_query('SELECT petition_id, button_text FROM ' . $db_prefix . 'civicrm_petition_button WHERE petition_id = %d', $survey_id);
+    while ($petitioninfo = db_fetch_array($petitionbuttonval)) {
+      $form->_defaultValues['button_text'] = $petitioninfo['button_text'];
+      break;
+    }
+  }
+  $form->add('text', 'button_text', ts('Custom submit button text'));
+}
+
+function civicrm_petition_button_civicrm_postProcess( $formName, &$form ) {
+  if ($formName != 'CRM_Campaign_Form_Petition') { return; }
+  $survey_id = $form->getVar('_surveyId');
+  if (!$survey_id) {  // Ugly hack because the form doesn't return the id
+    $surveys = civicrm_api("Survey","get", array(version=>'3', 'sequential' =>'1', 'title' =>$form->_submitValues['title']));
+    if (is_array($surveys['values'])) {
+      foreach($surveys['values'] as $survey) {
+        if ($lastmoddate > strtotime($survey['last_modified_date'])) { continue; }
+        $lastmoddate = strtotime($survey['last_modified_date']);
+        $survey_id = $survey['id'];
+      }
+    }
+  }
+  if (!$survey_id) {
+    CRM_Core_Session::setStatus( ts('Cannot find the petition for saving custom button text.') );
+    return;
+  }
+  $db_prefix = civicrm_petition_button_get_db_prefix();
+  $checkexisting = db_query("SELECT count(*) FROM {$db_prefix}civicrm_petition_button WHERE petition_id = %d", $survey_id);
+  if (db_result($checkexisting) == 0) {
+    if (strlen(trim($form->_submitValues['button_text'])) == 0) { return; }
+    $insert = db_query(
+      "INSERT INTO {$db_prefix}civicrm_petition_button (petition_id, button_text) VALUES ( %d, '%s' )", 
+      $survey_id, 
+      $form->_submitValues['button_text']
+    );
+  } else {
+    if (strlen(trim($form->_submitValues['button_text'])) == 0) {
+      $insert = db_query(
+        "DELETE FROM {$db_prefix}civicrm_petition_button WHERE petition_id = %d", 
+        $survey_id
+      ); 
+    } 
+    else {
+      $insert = db_query(
+        "UPDATE {$db_prefix}civicrm_petition_button SET button_text = '%s' WHERE petition_id = %d", 
+        $form->_submitValues['button_text'], 
+        $survey_id
+      );
+    }
+  }
+  if (!$insert) {
+    CRM_Core_Session::setStatus( ts('Could not save petition button information.') ); 
+  }
+}
+
+function civicrm_petition_button_civicrm_alterContent(  &$content, $context, $tplName, &$object ) {
+  if ($tplName == 'CRM/Campaign/Form/Petition/Signature.tpl') {
+    $survey_id = $object->getVar('_surveyId');
+    if ($survey_id) {
+      $db_prefix = civicrm_petition_button_get_db_prefix();
+      $petitionbuttonval = db_query('SELECT petition_id, button_text FROM ' . $db_prefix . 'civicrm_petition_button WHERE petition_id = %d', $survey_id);
+      while ($petitioninfo = db_fetch_array($petitionbuttonval)) {
+        $buttontext = $petitioninfo['button_text'];
+        break;
+      }
+    }
+    if ($buttontext) {
+      $buttontext = str_replace('"','\"',$buttontext);
+      $content .= '
+  <script type="text/javascript">cj("input[name=\'_qf_Signature_next\']").val("' . $buttontext . '");</script>
+    ';
+    }
+  }
+  elseif ($tplName == 'CRM/Campaign/Form/Petition.tpl') {
+    $rendererval = $object->getVar('_renderer');
+    
+    //insert the field before is_active
+    $insertpoint = strpos($content, '<tr class="crm-campaign-survey-form-block-is_active">');
+    $content1 = substr($content, 0, $insertpoint);
+    $content3 = substr($content, $insertpoint);
+    $content2 = '
+  <tr class="crm-campaign-survey-form-block-button_text">
+    <td class="label">'. $rendererval->_tpl->_tpl_vars['form']['button_text']['label'] .'</td>
+    <td>'.$rendererval->_tpl->_tpl_vars['form']['button_text']['html'].'
+      <div class="description">'.ts('Enter custom text to replace the "Sign the Petition" button.').'</div>
+    </td>
+  </tr>
+  ';
+    $content = $content1.$content2.$content3;
+  }
+}
+
+function civicrm_petition_button_get_db_prefix() {
+  global $db_prefix;
+  if (is_array($db_prefix)) {
+    return $db_prefix['default'];
+  } else {
+    return $db_prefix;
+  }
+}
